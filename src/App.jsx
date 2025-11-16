@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import Spline from '@splinetool/react-spline'
-import { Search, MapPin, ShoppingCart, Compass } from 'lucide-react'
+import { Search, MapPin, ShoppingCart, Compass, Target, Sparkles } from 'lucide-react'
 import StoreResults from './components/StoreResults'
+import SmartCityShell from './components/SmartCityShell'
+import AccuracyToggle from './components/AccuracyToggle'
+import SmartCityMap from './components/SmartCityMap'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -13,27 +15,41 @@ function App() {
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
   const [selectedStore, setSelectedStore] = useState(null)
+  const [accuracy, setAccuracy] = useState('high')
 
-  useEffect(() => {
+  const requestLocation = useCallback(() => {
     if (!('geolocation' in navigator)) {
       setError('Geolocation is not supported by your browser.')
       setLoadingLocation(false)
       return
     }
 
+    const optionsMap = {
+      high: { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+      balanced: { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+      low: { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+    }
+
+    setLoadingLocation(true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const { latitude, longitude } = pos.coords
-        setUserLocation({ lat: latitude, lng: longitude })
+        const { latitude, longitude, accuracy } = pos.coords
+        // Snap to road precision by trimming decimals to ~5 places (~1.1m) but allow manual refine on the map
+        const precise = { lat: Number(latitude.toFixed(6)), lng: Number(longitude.toFixed(6)) }
+        setUserLocation(precise)
         setLoadingLocation(false)
       },
       (err) => {
         setError('Location access denied. Please allow location to search nearby stores.')
         setLoadingLocation(false)
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      optionsMap[accuracy] || optionsMap.high
     )
-  }, [])
+  }, [accuracy])
+
+  useEffect(() => {
+    requestLocation()
+  }, [requestLocation])
 
   const handleSearch = useCallback(async () => {
     if (!userLocation) return
@@ -72,132 +88,111 @@ function App() {
     [userLocation]
   )
 
-  const hero = (
-    <section className="relative min-h-[60vh] w-full overflow-hidden">
-      <div className="absolute inset-0">
-        <Spline scene="https://prod.spline.design/g5OaHmrKTDxRI7Ig/scene.splinecode" style={{ width: '100%', height: '100%' }} />
-      </div>
-      <div className="relative z-10 pointer-events-none">
-        <div className="max-w-5xl mx-auto px-6 pt-24 pb-16">
-          <div className="backdrop-blur-md bg-black/30 rounded-2xl p-6 md:p-10 text-white">
-            <div className="flex items-center gap-2 text-blue-200 text-sm font-semibold mb-2">
-              <Compass size={16} /> Smart-city groceries
-            </div>
-            <h1 className="text-3xl md:text-5xl font-extrabold leading-tight">
-              CheapStop — find the closest, cheapest basket near you
-            </h1>
-            <p className="mt-3 text-blue-100 max-w-2xl">
-              Type your list, we scan nearby big-box stores, and you tap Go to open live directions in Google Maps.
-            </p>
+  const refinedCoordsText = userLocation
+    ? `${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}`
+    : '—'
 
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 pointer-events-auto">
-              <div className="flex items-center gap-2 bg-white rounded-xl px-4 py-2 shadow border border-white/10">
-                <Search className="text-gray-500" size={18} />
-                <input
-                  className="w-full outline-none py-2 text-gray-800 placeholder:text-gray-400"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="eggs, milk, chicken breast"
-                />
+  return (
+    <SmartCityShell>
+      <section className="relative">
+        <div className="max-w-6xl mx-auto px-6 pt-10">
+          <div className="grid md:grid-cols-[1.2fr_.8fr] gap-6 items-stretch">
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sky-200 text-sm font-semibold inline-flex items-center gap-2">
+                  <Compass size={16}/> Smart-city groceries
+                </div>
+                <AccuracyToggle value={accuracy} onChange={setAccuracy} />
               </div>
-              <button
-                disabled={!userLocation || searching}
-                onClick={handleSearch}
-                className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold px-5 py-3 rounded-xl shadow"
-              >
-                <ShoppingCart size={18} /> {searching ? 'Searching…' : 'Search'}
-              </button>
+              <h1 className="text-2xl md:text-4xl font-extrabold mt-2 tracking-tight">Find the closest, cheapest basket</h1>
+              <p className="text-sky-200/80 mt-2">Your list → nearby prices → tap Go. You can refine your origin by clicking on the mini map for pinpoint accuracy.</p>
+
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+                <div className="flex items-center gap-2 bg-white rounded-xl px-4 py-2 shadow border border-white/10">
+                  <Search className="text-gray-500" size={18} />
+                  <input
+                    className="w-full outline-none py-2 text-gray-800 placeholder:text-gray-400"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="eggs, milk, chicken breast"
+                  />
+                </div>
+                <button
+                  disabled={!userLocation || searching}
+                  onClick={handleSearch}
+                  className="inline-flex items-center justify-center gap-2 bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white font-semibold px-5 py-3 rounded-xl shadow"
+                >
+                  <ShoppingCart size={18} /> {searching ? 'Searching…' : 'Search'}
+                </button>
+              </div>
+
+              <div className="mt-3 text-xs text-sky-200 inline-flex items-center gap-2">
+                <MapPin size={14} /> {loadingLocation ? 'Detecting your location…' : refinedCoordsText}
+                <button onClick={requestLocation} className="text-sky-300 underline underline-offset-2">refresh</button>
+              </div>
+
+              <div className="mt-4">
+                <SmartCityMap
+                  origin={userLocation}
+                  destination={selectedStore ? { lat: selectedStore.lat, lng: selectedStore.lng } : null}
+                  onRefineOrigin={(c) => setUserLocation(c)}
+                />
+                <p className="text-[11px] text-sky-200/70 mt-2">Tip: click on the map to refine your starting point if GPS is off by a bit.</p>
+              </div>
             </div>
 
-            <div className="mt-3 text-xs text-blue-200">
-              {loadingLocation ? (
-                <span className="inline-flex items-center gap-1"><MapPin size={14} /> Detecting your location…</span>
-              ) : userLocation ? (
-                <span className="inline-flex items-center gap-1"><MapPin size={14} /> {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}</span>
+            <div className="bg-white rounded-2xl p-4 md:p-5 border shadow-sm">
+              {error && (
+                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg">
+                  {error}
+                </div>
+              )}
+
+              {results ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-sky-50 border border-sky-200 p-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-[11px] text-sky-700">Best Pit Stop</p>
+                        <h2 className="text-lg font-bold text-sky-900">{results.stores?.[0]?.storeName || '—'}</h2>
+                        {results.stores?.[0] && (
+                          <p className="text-[11px] text-sky-700 mt-1">{results.stores[0].distanceMiles.toFixed(1)} miles • ${results.stores[0].totalPrice.toFixed(2)}</p>
+                        )}
+                      </div>
+                      {results.stores?.[0] && (
+                        <button
+                          className="h-9 px-3 rounded-lg bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700"
+                          onClick={() => handleGoToStore(results.stores[0])}
+                        >
+                          Go
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    {results.stores?.map((store) => (
+                      <StoreResults
+                        key={store.storeId}
+                        store={store}
+                        selectedItems={selectedStore || {}}
+                        onSelectStore={handleSelectStore}
+                        onGo={handleGoToStore}
+                      />
+                    ))}
+                  </div>
+                </div>
               ) : (
-                <span className="inline-flex items-center gap-1 text-red-200"><MapPin size={14} /> {error || 'Location unavailable'}</span>
+                <div className="text-center text-gray-600">
+                  <p className="mb-2">Search for items to see nearby store options.</p>
+                  <p className="text-sm text-gray-400">We do not store your location. It is used only to calculate distance and route.</p>
+                </div>
               )}
             </div>
           </div>
         </div>
-      </div>
-    </section>
-  )
-
-  return (
-    <div className="min-h-screen bg-slate-50">
-      {hero}
-
-      <main className="max-w-5xl mx-auto px-6 py-10">
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {results ? (
-          <div className="space-y-4">
-            <div className="rounded-2xl bg-white border p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs text-gray-500">Best Pit Stop</p>
-                  <h2 className="text-xl font-bold text-gray-900">{results.stores?.[0]?.storeName || '—'}</h2>
-                  {results.stores?.[0] && (
-                    <p className="text-xs text-gray-500 mt-1">{results.stores[0].distanceMiles.toFixed(1)} miles away • ${results.stores[0].totalPrice.toFixed(2)} total</p>
-                  )}
-                  <p className="text-xs text-gray-500 mt-2">Tap Go on this store to start navigation via Google Maps.</p>
-                </div>
-                {results.stores?.[0] && (
-                  <button
-                    className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
-                    onClick={() => handleGoToStore(results.stores[0])}
-                  >
-                    Go (Open Route)
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {results.stores?.map((store) => (
-                <StoreResults
-                  key={store.storeId}
-                  store={store}
-                  selectedItems={selectedStore || {}}
-                  onSelectStore={handleSelectStore}
-                  onGo={handleGoToStore}
-                />
-              ))}
-            </div>
-
-            {selectedStore && (
-              <div className="rounded-2xl bg-white border p-4">
-                <h3 className="text-lg font-semibold">Route Preview</h3>
-                <p className="text-xs text-gray-500">Embedded map is optional; external Google Maps opens on Go.</p>
-                <div className="mt-3">
-                  <iframe
-                    title="Route map"
-                    className="w-full h-64 mt-2 rounded-xl border"
-                    loading="lazy"
-                    allowFullScreen
-                    src={`https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_EMBED_KEY || 'AIzaSyD-PLACEHOLDER'}&origin=${userLocation.lat},${userLocation.lng}&destination=${selectedStore.lat},${selectedStore.lng}&mode=driving`}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-center text-gray-600">
-            <p className="mb-2">Search for items to see nearby store options.</p>
-            <p className="text-sm text-gray-400">We do not store your location. It is used only to calculate distance and route.</p>
-          </div>
-        )}
-      </main>
-
-      <footer className="py-10 text-center text-xs text-gray-400">
-        Built for hackathons. CheapStop makes smart-city grocery runs easy.
-      </footer>
-    </div>
+      </section>
+    </SmartCityShell>
   )
 }
 
